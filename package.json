@@ -7,7 +7,7 @@
   "author": "Audio Joiner",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win"
+    "build": "electron-builder --win --publish never"
   },
   "dependencies": {
     "ffmpeg-static": "^5.2.0"
