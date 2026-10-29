@@ -1,0 +1,47 @@
+{
+  "name": "audio-joiner",
+  "productName": "Audio Joiner",
+  "version": "1.0.0",
+  "description": "Join multiple audio recordings (WAV, MP3, M4A, FLAC, OGG...) into one file.",
+  "main": "main.js",
+  "author": "Audio Joiner",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.audiojoiner.app",
+    "productName": "Audio Joiner",
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "merge.js",
+      "index.html",
+      "package.json",
+      "build/icon.png",
+      "build/icon.ico"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    }
+  }
+}

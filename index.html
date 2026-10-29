@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; media-src file:">
+<title>Audio Joiner</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c1e21; --muted:#6b7280; --accent:#2563eb; --border:#dfe3e8; --ok:#15803d; --err:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181d; --card:#20232a; --text:#eceef1; --muted:#9aa3af; --border:#333842; --accent:#3b82f6; } }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px; background:var(--bg); color:var(--text); font:15px/1.4 "Segoe UI",system-ui,sans-serif; min-height:100vh; }
+  body.dragging::after { content:"Drop audio files here"; position:fixed; inset:12px; border:3px dashed var(--accent); border-radius:16px; background:rgba(37,99,235,.12); display:grid; place-items:center; font-size:22px; font-weight:600; color:var(--accent); pointer-events:none; }
+  h1 { margin:0 0 4px; font-size:24px; }
+  .sub { color:var(--muted); margin-bottom:22px; }
+  .slot { display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px; }
+  .slot.over { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,.25); }
+  .num { width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:600; flex:none; }
+  .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .name.empty { color:var(--muted); }
+  button { font:inherit; cursor:pointer; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:8px; padding:7px 12px; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.4; cursor:default; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; padding:12px 20px; font-size:16px; }
+  .icon { padding:7px 9px; }
+  .row { display:flex; gap:12px; align-items:center; margin-top:18px; flex-wrap:wrap; }
+  select { font:inherit; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--card); color:var(--text); }
+  #status { margin-top:16px; min-height:24px; }
+  .err { color:var(--err); white-space:pre-wrap; font-size:13px; }
+  .ok { color:var(--ok); }
+  #result { display:none; margin-top:18px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  #result h2 { margin:0 0 10px; font-size:16px; }
+  audio { width:100%; }
+</style>
+</head>
+<body>
+<h1>Audio Joiner</h1>
+<div class="sub">Drag audio files onto the window (or use the buttons). They're joined in order with no gap between tracks. Mixed formats are fine.</div>
+
+<div id="slots"></div>
+<button id="add">+ Add another file</button>
+
+<div class="row">
+  <label>Format&nbsp;
+    <select id="format">
+      <option value="mp3">MP3</option>
+      <option value="wav">WAV</option>
+      <option value="m4a">M4A (AAC)</option>
+      <option value="flac">FLAC</option>
+      <option value="ogg">OGG</option>
+    </select>
+  </label>
+  <button id="join" class="primary">Join &amp; preview</button>
+</div>
+<div id="status"></div>
+
+<div id="result">
+  <h2>Preview of the joined file</h2>
+  <audio id="player" controls></audio>
+  <div class="row"><button id="save" class="primary">Save as…</button><span id="saved"></span></div>
+</div>
+
+<script>
+const AUDIO_EXT = /\.(wav|mp3|m4a|aac|flac|ogg|wma|opus|aiff?)$/i;
+let slots = [null, null]; // each: {path, name} or null
+
+// Put files into slots starting at index `start`, then into next empty slots, then new slots.
+function place(files, start) {
+  files.forEach((f, k) => {
+    if (k === 0 && start != null) { slots[start] = f; return; }
+    const from = start != null ? start + 1 : 0;
+    const e = slots.findIndex((s, idx) => idx >= from && !s);
+    if (e >= 0) slots[e] = f; else slots.push(f);
+  });
+  render();
+}
+
+function filesFromDrop(ev) {
+  return [...ev.dataTransfer.files]
+    .filter(f => AUDIO_EXT.test(f.name))
+    .map(f => ({ path: window.api.pathForFile(f), name: f.name }));
+}
+
+function render() {
+  const el = document.getElementById('slots');
+  el.innerHTML = '';
+  slots.forEach((f, i) => {
+    const d = document.createElement('div');
+    d.className = 'slot';
+    d.innerHTML = `<div class="num">${i + 1}</div>
+      <div class="name ${f ? '' : 'empty'}"></div>
+      <button data-a="pick">${f ? 'Change' : 'Choose file…'}</button>
+      <button class="icon" data-a="up" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
+      <button class="icon" data-a="down" ${i === slots.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
+      <button class="icon" data-a="del" ${slots.length <= 2 ? 'disabled' : ''} title="Remove">✕</button>`;
+    d.querySelector('.name').textContent = f ? f.name : `File ${i + 1} — drop or choose a file`;
+    d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+    d.addEventListener('dragleave', () => d.classList.remove('over'));
+    d.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation();
+      document.body.classList.remove('dragging'); dragDepth = 0;
+      const files = filesFromDrop(e);
+      if (files.length) place(files, i);
+    });
+    d.addEventListener('click', async ev => {
+      const a = ev.target.dataset.a;
+      if (!a) return;
+      if (a === 'pick') { const files = await window.api.pickFile(); if (files.length) place(files, i); return; }
+      if (a === 'up') [slots[i - 1], slots[i]] = [slots[i], slots[i - 1]];
+      if (a === 'down') [slots[i + 1], slots[i]] = [slots[i], slots[i + 1]];
+      if (a === 'del') slots.splice(i, 1);
+      render();
+    });
+    el.appendChild(d);
+  });
+}
+
+// Dropping anywhere else on the window fills the next empty slots
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  const files = filesFromDrop(e);
+  if (files.length) place(files, null);
+});
+
+document.getElementById('add').onclick = () => { slots.push(null); render(); };
+
+const status = document.getElementById('status');
+const result = document.getElementById('result');
+const player = document.getElementById('player');
+window.api.onProgress(t => { status.className = ''; status.textContent = 'Joining… processed ' + t; });
+
+document.getElementById('join').onclick = async () => {
+  const chosen = slots.filter(Boolean);
+  if (chosen.length < 2) { status.className = 'err'; status.textContent = 'Please choose at least two files.'; return; }
+  const btn = document.getElementById('join');
+  btn.disabled = true; result.style.display = 'none'; player.pause();
+  status.className = ''; status.textContent = 'Joining…';
+  const r = await window.api.merge(chosen.map(f => f.path), document.getElementById('format').value);
+  btn.disabled = false;
+  if (r.ok) {
+    status.className = 'ok'; status.textContent = '✔ Joined. Listen below, then save it.';
+    player.src = r.url; result.style.display = 'block';
+    document.getElementById('saved').textContent = '';
+  } else { status.className = 'err'; status.textContent = 'Something went wrong:\n' + r.error; }
+};
+
+document.getElementById('save').onclick = async () => {
+  const r = await window.api.save();
+  const s = document.getElementById('saved');
+  if (r.canceled) return;
+  if (r.ok) {
+    s.className = 'ok'; s.textContent = '✔ Saved ';
+    const b = document.createElement('button'); b.textContent = 'Show in folder';
+    b.onclick = () => window.api.reveal(r.path); s.appendChild(b);
+  } else { s.className = 'err'; s.textContent = r.error; }
+};
+render();
+</script>
+</body>
+</html>
