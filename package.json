@@ -1,8 +1,8 @@
 {
   "name": "audio-joiner",
-  "productName": "Audio Joiner",
+  "productName": "Audio Join",
   "version": "1.2.0",
-  "description": "Join multiple audio recordings (WAV, MP3, M4A, FLAC, OGG...) into one file.",
+  "description": "Join, convert and record audio files. Mix WAV, MP3, M4A, FLAC and OGG.",
   "main": "main.js",
   "author": "Audio Joiner",
   "scripts": {
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.audiojoiner.app",
-    "productName": "Audio Joiner",
+    "productName": "Audio Join",
     "asarUnpack": [
       "node_modules/ffmpeg-static/**"
     ],
@@ -32,7 +32,20 @@
       "build/icon.ico"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "appx",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -42,6 +55,17 @@
       "createStartMenuShortcut": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
+    },
+    "appx": {
+      "identityName": "BenAri.AudioJoin",
+      "publisher": "CN=F71D5B9C-CFAD-403C-946E-6992D1322615",
+      "publisherDisplayName": "Ben Ari",
+      "applicationId": "AudioJoin",
+      "displayName": "Audio Join",
+      "backgroundColor": "#3b4fe0",
+      "languages": [
+        "en-US"
+      ]
     }
   }
 }

@@ -12,7 +12,7 @@ const recTemps = new Set();
 function createWindow() {
   win = new BrowserWindow({
     width: 920, height: 680, minWidth: 780, minHeight: 560,
-    title: 'Audio Joiner', autoHideMenuBar: true, backgroundColor: '#f5f5f5',
+    title: 'Audio Join', autoHideMenuBar: true, backgroundColor: '#f5f5f5',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
