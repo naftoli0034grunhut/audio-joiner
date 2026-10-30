@@ -7,14 +7,19 @@ const { mergeFiles, convertFile } = require('./merge');
 
 let win;
 const tempFiles = { join: null, convert: null };
+const recTemps = new Set();
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 920, height: 640, minWidth: 780, minHeight: 540,
+    width: 920, height: 680, minWidth: 780, minHeight: 560,
     title: 'Audio Joiner', autoHideMenuBar: true, backgroundColor: '#f5f5f5',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
+  // allow the microphone (and nothing else)
+  const ses = win.webContents.session;
+  ses.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media'));
+  ses.setPermissionCheckHandler((_wc, permission) => permission === 'media');
   win.loadFile('index.html');
 }
 
@@ -45,16 +50,37 @@ ipcMain.handle('pick-file', async (_e, multi) => {
   return r.canceled ? [] : r.filePaths.map(p => ({ path: p, name: path.basename(p) }));
 });
 
+// A finished microphone recording arrives as raw bytes; turn it into a WAV so it plays and seeks properly.
+ipcMain.handle('save-recording', async (_e, data) => {
+  const base = path.join(os.tmpdir(), `audio-joiner-rec-${Date.now()}`);
+  const raw = base + '.webm', wav = base + '.wav';
+  try {
+    fs.writeFileSync(raw, Buffer.from(data));
+    await convertFile(raw, wav);
+    recTemps.add(wav);
+    return { ok: true, path: wav, url: pathToFileURL(wav).href };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  } finally {
+    try { fs.unlinkSync(raw); } catch (_) {}
+  }
+});
+
+ipcMain.handle('delete-temp', (_e, p) => {
+  if (recTemps.has(p)) { try { fs.unlinkSync(p); } catch (_) {} recTemps.delete(p); }
+});
+
 // Create the result in a temp file so it can be previewed before saving.
-ipcMain.handle('process', async (_e, { kind, inputs, format }) => {
+ipcMain.handle('process', async (_e, { kind, inputs, format, quality }) => {
   cleanTemp(kind);
   const out = path.join(os.tmpdir(), `audio-joiner-${kind}-${Date.now()}.${format}`);
   const progress = t => win.webContents.send('progress', t);
   try {
-    if (kind === 'join') await mergeFiles(inputs, out, progress);
-    else await convertFile(inputs[0], out, progress);
+    if (kind === 'join') await mergeFiles(inputs, out, progress, { quality });
+    else await convertFile(inputs[0], out, progress, { quality });
     tempFiles[kind] = out;
-    return { ok: true, url: pathToFileURL(out).href };
+    const size = fs.statSync(out).size;
+    return { ok: true, url: pathToFileURL(out).href, size };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -83,5 +109,8 @@ ipcMain.handle('save', async (_e, kind) => {
 ipcMain.handle('reveal', (_e, p) => shell.showItemInFolder(p));
 
 app.whenReady().then(createWindow);
-app.on('will-quit', () => { cleanTemp('join'); cleanTemp('convert'); });
+app.on('will-quit', () => {
+  cleanTemp('join'); cleanTemp('convert');
+  recTemps.forEach(p => { try { fs.unlinkSync(p); } catch (_) {} });
+});
 app.on('window-all-closed', () => app.quit());

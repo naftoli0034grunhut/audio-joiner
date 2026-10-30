@@ -1,7 +1,7 @@
 {
   "name": "audio-joiner",
   "productName": "Audio Joiner",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Join multiple audio recordings (WAV, MP3, M4A, FLAC, OGG...) into one file.",
   "main": "main.js",
   "author": "Audio Joiner",

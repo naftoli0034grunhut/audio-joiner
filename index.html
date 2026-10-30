@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self'; media-src file:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self'; media-src file: blob:">
 <title>Audio Joiner</title>
 <style>
-  :root { --bg:#f5f5f5; --side:#fff; --card:#fff; --text:#1f2328; --muted:#6b7280; --accent:#1a73e8; --accent-soft:#e8f0fe; --border:#e4e4e7; --ok:#15803d; --err:#b91c1c; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#17181c; --side:#1e2025; --card:#1e2025; --text:#e8eaed; --muted:#9aa0a6; --accent:#5b9cf5; --accent-soft:#243247; --border:#30343b; } }
+  :root { --bg:#f5f5f5; --side:#fff; --card:#fff; --text:#1f2328; --muted:#6b7280; --accent:#1a73e8; --accent-soft:#e8f0fe; --border:#e4e4e7; --ok:#15803d; --err:#b91c1c; --rec:#d93025; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181c; --side:#1e2025; --card:#1e2025; --text:#e8eaed; --muted:#9aa0a6; --accent:#5b9cf5; --accent-soft:#243247; --border:#30343b; --rec:#f0645a; } }
   * { box-sizing:border-box; }
   html, body { height:100%; margin:0; }
   body { background:var(--bg); color:var(--text); font:13px/1.4 "Segoe UI",system-ui,sans-serif; overflow:hidden; }
@@ -26,17 +26,40 @@
   h2 { margin:0 0 2px; font-size:18px; }
   .sub { color:var(--muted); margin-bottom:16px; font-size:12.5px; }
   body.dragging::after { content:"Drop audio files here"; position:fixed; inset:8px; border:2px dashed var(--accent); border-radius:10px; background:rgba(26,115,232,.1); display:grid; place-items:center; font-size:16px; font-weight:600; color:var(--accent); pointer-events:none; }
-  .slot { display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:7px 9px; margin-bottom:6px; }
+
+  .slot { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 9px; margin-bottom:8px; }
   .slot.over { border-color:var(--accent); box-shadow:0 0 0 3px rgba(26,115,232,.2); }
+  .head { display:flex; align-items:center; gap:7px; }
   .num { width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; display:grid; place-items:center; font-size:11px; font-weight:600; flex:none; }
   .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .name.empty { color:var(--muted); }
+  .player { margin-top:7px; }
+  audio { width:100%; height:32px; display:block; }
   button { font:inherit; font-size:12.5px; cursor:pointer; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:6px; padding:5px 10px; }
   button:hover:not(:disabled) { border-color:var(--accent); }
   button:disabled { opacity:.4; cursor:default; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; padding:7px 16px; }
   button.primary:hover:not(:disabled) { filter:brightness(1.08); }
+  button.recbtn { color:var(--rec); }
+  button.recbtn:hover:not(:disabled) { border-color:var(--rec); }
+  button.recgo { background:var(--rec); border-color:var(--rec); color:#fff; font-weight:600; }
+  button.link { border:0; background:none; color:var(--accent); padding:2px 4px; }
   .icon { padding:4px 7px; line-height:1; }
+
+  .recpanel { margin-top:8px; padding:8px; border:1px dashed var(--border); border-radius:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .recpanel select { max-width:300px; }
+  .recpanel .msg { color:var(--muted); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--rec); animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.25; } }
+  .timer { font-variant-numeric:tabular-nums; font-weight:600; min-width:42px; }
+
+  .adjust { margin-top:6px; }
+  .adj { display:grid; grid-template-columns:60px 1fr 52px; align-items:center; gap:8px; margin-top:5px; }
+  .adj label { color:var(--muted); }
+  .adj input[type=range] { width:100%; accent-color:var(--accent); }
+  .adj output { text-align:right; font-variant-numeric:tabular-nums; }
+  .hint { color:var(--muted); font-size:11.5px; margin-top:6px; }
+
   .row { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
   .row label { color:var(--muted); }
   select { font:inherit; font-size:12.5px; padding:5px 8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); }
@@ -45,8 +68,12 @@
   .ok { color:var(--ok); }
   .result { display:none; margin-top:12px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
   .result h3 { margin:0 0 8px; font-size:12.5px; font-weight:600; }
-  audio { width:100%; height:34px; }
   .result .row { margin-top:10px; }
+
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.4); display:grid; place-items:center; z-index:10; }
+  .box { background:var(--card); border-radius:10px; padding:16px 18px; width:380px; max-width:90vw; box-shadow:0 10px 30px rgba(0,0,0,.3); }
+  .box p { margin:0; line-height:1.5; }
+  .box .row { justify-content:flex-end; }
 </style>
 </head>
 <body>
@@ -64,7 +91,7 @@
   <main>
     <section id="view-join">
       <h2>Join files</h2>
-      <div class="sub">Drag audio files onto the window or use the buttons. They are joined in order with no gap. Mixed formats are fine.</div>
+      <div class="sub">Drag audio files onto the window, choose them, or record with a microphone. They are joined in order with no gap.</div>
       <div id="slots"></div>
       <button id="add">+ Add another file</button>
       <div id="join-actions"></div>
@@ -72,7 +99,7 @@
 
     <section id="view-convert" hidden>
       <h2>Convert files</h2>
-      <div class="sub">Drag one audio file onto the window or choose it, then pick the format you want (for example MP3 to WAV).</div>
+      <div class="sub">Drag one audio file onto the window, choose it, or record it. Then pick the format you want (for example MP3 to WAV).</div>
       <div id="convert-slot"></div>
       <div id="convert-actions"></div>
     </section>
@@ -82,39 +109,274 @@
 <script>
 const AUDIO_EXT = /\.(wav|mp3|m4a|aac|flac|ogg|wma|opus|aiff?)$/i;
 const FORMATS = [['mp3','MP3'],['wav','WAV'],['m4a','M4A (AAC)'],['flac','FLAC'],['ogg','OGG']];
+const QUALITIES = [['best','Best quality'],['balanced','Balanced (smaller)'],['small','Small'],['smallest','Smallest']];
+
 let view = 'join';
 let busyKind = null;
-let slots = [null, null];       // join files
-let convertSrc = null;          // convert file
+let recCount = 0, recId = 0;
 
-// ---------- shared: format picker + status + preview + save ----------
+// a slot = one audio source (uploaded file or recording) + its sound adjustments
+const mkSlot = () => ({ file: null, vol: 100, bass: 0, treble: 0, adjustOpen: false, rec: null });
+let slots = [mkSlot(), mkSlot()];
+let convSlot = mkSlot();
+
+const isEmpty = s => !s.file && !s.rec;
+function setFile(s, f) {
+  if (s.file && s.file.recorded) window.api.deleteTemp(s.file.path);
+  s.file = f;
+}
+const toFile = f => ({ path: f.path, name: f.name, url: window.api.fileUrl(f.path), recorded: false });
+const mmss = ms => { const t = Math.floor(ms / 1000); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+
+// ---------- confirmation popup ----------
+function confirmBox(message, okLabel) {
+  return new Promise(resolve => {
+    const o = document.createElement('div');
+    o.className = 'modal';
+    o.innerHTML = '<div class="box"><p></p><div class="row"><button data-v="0">Cancel</button><button class="primary" data-v="1"></button></div></div>';
+    o.querySelector('p').textContent = message;
+    o.querySelector('.primary').textContent = okLabel || 'Proceed';
+    o.onclick = e => { const v = e.target.dataset && e.target.dataset.v; if (v !== undefined) { o.remove(); resolve(v === '1'); } };
+    document.body.appendChild(o);
+  });
+}
+
+// ---------- recording ----------
+async function openRecord(s, rerender) {
+  if (s.rec) return;
+  if (s.file) {
+    const what = s.file.recorded ? 'The current recording' : 'The uploaded file';
+    const ok = await confirmBox(what + ' will be removed when you record. Do you want to proceed?');
+    if (!ok) return;
+    setFile(s, null);
+  }
+  s.rec = { id: ++recId, phase: 'setup', devices: [], deviceId: null, error: null };
+  rerender();
+  const rec = s.rec;
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true }); // asks permission so device names show
+    tmp.getTracks().forEach(t => t.stop());
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    if (s.rec !== rec) return;
+    rec.devices = devs;
+    const def = devs.find(d => d.deviceId === 'default') || devs[0];
+    rec.deviceId = def ? def.deviceId : null;
+    if (!devs.length) rec.error = 'No microphone found.';
+  } catch (e) {
+    if (s.rec !== rec) return;
+    rec.error = 'Could not access the microphone. In Windows Settings > Privacy & security > Microphone, allow microphone access (including for desktop apps).';
+  }
+  rerender();
+}
+
+async function startRecording(s, rerender) {
+  const rec = s.rec;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: rec.deviceId ? { deviceId: { exact: rec.deviceId } } : true });
+    const mr = new MediaRecorder(stream);
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(rec.timer);
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+      const data = new Uint8Array(await blob.arrayBuffer());
+      const r = await window.api.saveRecording(data);
+      s.rec = null;
+      if (r.ok) { s.file = { path: r.path, name: 'Recording ' + (++recCount), url: r.url, recorded: true }; }
+      else { s.rec = { id: ++recId, phase: 'setup', devices: rec.devices, deviceId: rec.deviceId, error: 'Recording failed: ' + r.error }; }
+      rerender();
+    };
+    rec.mr = mr; rec.phase = 'recording'; rec.start = Date.now();
+    mr.start();
+    rec.timer = setInterval(() => {
+      const el = document.querySelector('[data-timer="' + rec.id + '"]');
+      if (el) el.textContent = mmss(Date.now() - rec.start);
+    }, 250);
+    rerender();
+  } catch (e) {
+    rec.error = 'Could not start the microphone: ' + (e.message || e);
+    rerender();
+  }
+}
+
+// ---------- one audio source (used by Join and Convert) ----------
+function createSlot(s, o) {
+  const d = document.createElement('div');
+  d.className = 'slot';
+  const busy = !!s.rec;
+  const f = s.file;
+  d.innerHTML = `<div class="head">
+      ${o.index != null ? `<div class="num">${o.index + 1}</div>` : ''}
+      <div class="name ${f ? '' : 'empty'}"></div>
+      <button data-a="pick" ${busy ? 'disabled' : ''}>${f && !f.recorded ? 'Change' : 'Choose file…'}</button>
+      <button class="recbtn" data-a="rec" ${busy ? 'disabled' : ''}>● Record</button>
+      ${o.movable ? `<button class="icon" data-a="up" ${o.index === 0 || busy ? 'disabled' : ''} title="Move up">↑</button>
+      <button class="icon" data-a="down" ${o.index === o.total - 1 || busy ? 'disabled' : ''} title="Move down">↓</button>
+      <button class="icon" data-a="del" ${o.total <= 2 || busy ? 'disabled' : ''} title="Remove">✕</button>` : ''}
+    </div>`;
+  d.querySelector('.name').textContent = f ? f.name : (s.rec ? (s.rec.phase === 'recording' ? 'Recording…' : 'Set up recording') : (o.emptyText || 'Drop a file here, choose one, or record'));
+
+  if (s.rec) {
+    const r = s.rec;
+    const p = document.createElement('div');
+    p.className = 'recpanel';
+    if (r.phase === 'setup') {
+      p.innerHTML = `<label>Microphone</label><select data-a="mic"></select>
+        <button class="recgo" data-a="start">● Start recording</button><button data-a="cancelrec">Cancel</button><span class="msg"></span>`;
+      const sel = p.querySelector('select');
+      if (!r.devices.length) { const op = document.createElement('option'); op.textContent = r.error ? 'Not available' : 'Looking for microphones…'; sel.appendChild(op); sel.disabled = true; }
+      r.devices.forEach((dv, i) => {
+        const op = document.createElement('option');
+        op.value = dv.deviceId; op.textContent = dv.label || ('Microphone ' + (i + 1));
+        if (dv.deviceId === r.deviceId) op.selected = true;
+        sel.appendChild(op);
+      });
+      sel.onchange = () => { r.deviceId = sel.value; };
+      p.querySelector('[data-a=start]').disabled = !r.devices.length;
+      if (r.error) { const m = p.querySelector('.msg'); m.className = 'err'; m.textContent = r.error; }
+    } else {
+      const label = (r.devices.find(x => x.deviceId === r.deviceId) || {}).label || 'Microphone';
+      p.innerHTML = `<span class="dot"></span><span class="timer" data-timer="${r.id}">00:00</span><span class="msg"></span>
+        <button class="primary" data-a="stop">■ Stop</button>`;
+      p.querySelector('.msg').textContent = label;
+    }
+    d.appendChild(p);
+  }
+
+  if (f) {
+    const pl = document.createElement('div');
+    pl.className = 'player';
+    const au = document.createElement('audio');
+    au.controls = true; au.preload = 'metadata'; au.src = f.url;
+    pl.appendChild(au);
+    d.appendChild(pl);
+
+    const adj = document.createElement('div');
+    adj.className = 'adjust';
+    const changed = () => s.vol !== 100 || s.bass !== 0 || s.treble !== 0;
+    adj.innerHTML = `<button class="link" data-a="adj"></button><div class="panel" ${s.adjustOpen ? '' : 'hidden'}>
+        <div class="adj"><label>Volume</label><input type="range" min="10" max="300" step="5" data-k="vol"><output></output></div>
+        <div class="adj"><label>Bass</label><input type="range" min="-10" max="10" step="1" data-k="bass"><output></output></div>
+        <div class="adj"><label>Treble</label><input type="range" min="-10" max="10" step="1" data-k="treble"><output></output></div>
+        <div class="hint">The player above plays the original. Changes are applied when you press the preview button.
+          <button class="link" data-a="reset">Reset</button></div></div>`;
+    const toggle = adj.querySelector('[data-a=adj]');
+    const label = () => { toggle.textContent = (s.adjustOpen ? '▾' : '▸') + ' Adjust sound' + (changed() ? ' (changed)' : ''); };
+    const fmt = (k, v) => k === 'vol' ? v + '%' : (v > 0 ? '+' : '') + v + ' dB';
+    adj.querySelectorAll('input[type=range]').forEach(inp => {
+      const k = inp.dataset.k, out = inp.nextElementSibling;
+      inp.value = s[k]; out.textContent = fmt(k, s[k]);
+      inp.oninput = () => { s[k] = Number(inp.value); out.textContent = fmt(k, s[k]); label(); };
+    });
+    label();
+    d.appendChild(adj);
+  }
+
+  d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+  d.addEventListener('dragleave', () => d.classList.remove('over'));
+  d.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation();
+    d.classList.remove('over'); document.body.classList.remove('dragging'); dragDepth = 0;
+    if (s.rec) return;
+    const files = filesFromDrop(e); if (files.length) o.onFiles(files);
+  });
+  d.addEventListener('click', async ev => {
+    const a = ev.target.dataset && ev.target.dataset.a; if (!a) return;
+    const re = o.rerender;
+    if (a === 'pick') { const files = await window.api.pickFile(o.multi); if (files.length) o.onFiles(files); }
+    else if (a === 'rec') openRecord(s, re);
+    else if (a === 'start') startRecording(s, re);
+    else if (a === 'stop') { if (s.rec.mr && s.rec.mr.state !== 'inactive') s.rec.mr.stop(); }
+    else if (a === 'cancelrec') { s.rec = null; re(); }
+    else if (a === 'adj') { s.adjustOpen = !s.adjustOpen; re(); }
+    else if (a === 'reset') { s.vol = 100; s.bass = 0; s.treble = 0; re(); }
+    else if (a === 'up') { o.move(-1); }
+    else if (a === 'down') { o.move(1); }
+    else if (a === 'del') { o.remove(); }
+  });
+  return d;
+}
+
+// ---------- drag & drop helpers ----------
+function filesFromDrop(ev) {
+  return [...ev.dataTransfer.files].filter(f => AUDIO_EXT.test(f.name))
+    .map(f => toFile({ path: window.api.pathForFile(f), name: f.name }));
+}
+
+// ---------- JOIN view ----------
+function place(files, start) {
+  files.forEach((f, k) => {
+    let target = null;
+    if (k === 0 && start != null) target = slots[start];
+    else {
+      const from = start != null ? start + 1 : 0;
+      target = slots.find((s, i) => i >= from && isEmpty(s));
+      if (!target) { target = mkSlot(); slots.push(target); }
+    }
+    if (target.rec) return;
+    setFile(target, f);
+  });
+  renderJoin();
+}
+function renderJoin() {
+  const el = document.getElementById('slots');
+  el.innerHTML = '';
+  slots.forEach((s, i) => el.appendChild(createSlot(s, {
+    index: i, total: slots.length, movable: true, multi: true, rerender: renderJoin,
+    emptyText: 'File ' + (i + 1) + ': drop a file here, choose one, or record',
+    onFiles: files => place(files.map(x => toFile(x)), i),
+    move: dir => { [slots[i + dir], slots[i]] = [slots[i], slots[i + dir]]; renderJoin(); },
+    remove: () => { setFile(s, null); slots.splice(i, 1); renderJoin(); },
+  })));
+}
+document.getElementById('add').onclick = () => { slots.push(mkSlot()); renderJoin(); };
+
+// ---------- CONVERT view ----------
+function renderConvert() {
+  const el = document.getElementById('convert-slot');
+  el.innerHTML = '';
+  el.appendChild(createSlot(convSlot, {
+    index: null, multi: false, rerender: renderConvert,
+    onFiles: files => { if (!convSlot.rec) { setFile(convSlot, toFile(files[0])); renderConvert(); } },
+  }));
+}
+
+// ---------- shared: format + size + status + preview + save ----------
 function buildActions(k, goLabel) {
   document.getElementById(k + '-actions').innerHTML = `
     <div class="row">
       <label>Format</label>
       <select id="${k}-format">${FORMATS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>
+      <label>Size</label>
+      <select id="${k}-quality">${QUALITIES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>
       <button class="primary" id="${k}-go">${goLabel}</button>
     </div>
+    <div class="hint">For smaller files choose MP3, M4A or OGG with Small or Smallest. WAV and FLAC stay large.</div>
     <div class="status" id="${k}-status"></div>
     <div class="result" id="${k}-result">
-      <h3>Preview</h3>
+      <h3>Preview <span id="${k}-size" style="font-weight:400;color:var(--muted)"></span></h3>
       <audio id="${k}-player" controls></audio>
       <div class="row"><button class="primary" id="${k}-save">Save as…</button><span id="${k}-saved"></span></div>
     </div>`;
   const $ = id => document.getElementById(k + '-' + id);
 
   $('go').onclick = async () => {
-    const inputs = k === 'join' ? slots.filter(Boolean) : (convertSrc ? [convertSrc] : []);
+    const list = k === 'join' ? slots : [convSlot];
     const st = $('status');
-    if (k === 'join' && inputs.length < 2) { st.className = 'status err'; st.textContent = 'Please choose at least two files.'; return; }
-    if (k === 'convert' && !inputs.length) { st.className = 'status err'; st.textContent = 'Please choose a file first.'; return; }
+    if (list.some(s => s.rec)) { st.className = 'status err'; st.textContent = 'Please finish or cancel the recording first.'; return; }
+    const inputs = list.filter(s => s.file).map(s => ({ path: s.file.path, vol: s.vol, bass: s.bass, treble: s.treble }));
+    if (k === 'join' && inputs.length < 2) { st.className = 'status err'; st.textContent = 'Please add at least two files.'; return; }
+    if (k === 'convert' && !inputs.length) { st.className = 'status err'; st.textContent = 'Please add a file first.'; return; }
     $('go').disabled = true; $('result').style.display = 'none'; $('player').pause();
     st.className = 'status'; st.textContent = 'Working…'; busyKind = k;
-    const r = await window.api.process(k, inputs.map(f => f.path), $('format').value);
+    const r = await window.api.process(k, inputs, $('format').value, $('quality').value);
     busyKind = null; $('go').disabled = false;
     if (r.ok) {
       st.className = 'status ok'; st.textContent = '✔ Ready. Listen below, then save it.';
       $('player').src = r.url; $('result').style.display = 'block'; $('saved').textContent = '';
+      $('size').textContent = '(' + fmtSize(r.size) + ')';
     } else { st.className = 'status err'; st.textContent = 'Something went wrong:\n' + r.error; }
   };
 
@@ -148,73 +410,6 @@ document.querySelectorAll('.nav').forEach(b => b.onclick = () => {
   document.querySelectorAll('audio').forEach(a => a.pause());
 });
 
-// ---------- drag & drop helpers ----------
-function filesFromDrop(ev) {
-  return [...ev.dataTransfer.files].filter(f => AUDIO_EXT.test(f.name))
-    .map(f => ({ path: window.api.pathForFile(f), name: f.name }));
-}
-function enableDrop(el, onFiles) {
-  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('over'); });
-  el.addEventListener('dragleave', () => el.classList.remove('over'));
-  el.addEventListener('drop', e => {
-    e.preventDefault(); e.stopPropagation();
-    el.classList.remove('over'); document.body.classList.remove('dragging'); dragDepth = 0;
-    const files = filesFromDrop(e); if (files.length) onFiles(files);
-  });
-}
-
-// ---------- JOIN view ----------
-function place(files, start) {
-  files.forEach((f, k) => {
-    if (k === 0 && start != null) { slots[start] = f; return; }
-    const from = start != null ? start + 1 : 0;
-    const e = slots.findIndex((s, idx) => idx >= from && !s);
-    if (e >= 0) slots[e] = f; else slots.push(f);
-  });
-  renderJoin();
-}
-function renderJoin() {
-  const el = document.getElementById('slots');
-  el.innerHTML = '';
-  slots.forEach((f, i) => {
-    const d = document.createElement('div');
-    d.className = 'slot';
-    d.innerHTML = `<div class="num">${i + 1}</div><div class="name ${f ? '' : 'empty'}"></div>
-      <button data-a="pick">${f ? 'Change' : 'Choose file…'}</button>
-      <button class="icon" data-a="up" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
-      <button class="icon" data-a="down" ${i === slots.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
-      <button class="icon" data-a="del" ${slots.length <= 2 ? 'disabled' : ''} title="Remove">✕</button>`;
-    d.querySelector('.name').textContent = f ? f.name : `File ${i + 1}: drop or choose a file`;
-    enableDrop(d, files => place(files, i));
-    d.addEventListener('click', async ev => {
-      const a = ev.target.dataset.a; if (!a) return;
-      if (a === 'pick') { const files = await window.api.pickFile(true); if (files.length) place(files, i); return; }
-      if (a === 'up') [slots[i - 1], slots[i]] = [slots[i], slots[i - 1]];
-      if (a === 'down') [slots[i + 1], slots[i]] = [slots[i], slots[i + 1]];
-      if (a === 'del') slots.splice(i, 1);
-      renderJoin();
-    });
-    el.appendChild(d);
-  });
-}
-document.getElementById('add').onclick = () => { slots.push(null); renderJoin(); };
-
-// ---------- CONVERT view ----------
-function renderConvert() {
-  const el = document.getElementById('convert-slot');
-  el.innerHTML = '';
-  const d = document.createElement('div');
-  d.className = 'slot';
-  d.innerHTML = `<div class="name ${convertSrc ? '' : 'empty'}"></div><button>${convertSrc ? 'Change' : 'Choose file…'}</button>`;
-  d.querySelector('.name').textContent = convertSrc ? convertSrc.name : 'Drop an audio file here or choose one';
-  enableDrop(d, files => { convertSrc = files[0]; renderConvert(); });
-  d.querySelector('button').onclick = async () => {
-    const files = await window.api.pickFile(false);
-    if (files.length) { convertSrc = files[0]; renderConvert(); }
-  };
-  el.appendChild(d);
-}
-
 // ---------- drop anywhere on the window ----------
 let dragDepth = 0;
 window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
@@ -223,7 +418,8 @@ window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => {
   e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
   const files = filesFromDrop(e); if (!files.length) return;
-  if (view === 'join') place(files, null); else { convertSrc = files[0]; renderConvert(); }
+  if (view === 'join') place(files, null);
+  else if (!convSlot.rec) { setFile(convSlot, files[0]); renderConvert(); }
 });
 
 renderJoin(); renderConvert();
