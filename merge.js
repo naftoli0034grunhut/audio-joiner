@@ -31,8 +31,8 @@ function effectFilters(e = {}) {
   const bass = clamp(num(e.bass, 0), -20, 20);
   const treble = clamp(num(e.treble, 0), -20, 20);
   const f = [];
-  if (bass) f.push(`bass=g=${bass}`);
-  if (treble) f.push(`treble=g=${treble}`);
+  if (bass) f.push(`bass=g=${bass}:f=200:t=q:w=0.707`);
+  if (treble) f.push(`treble=g=${treble}:f=3000:t=q:w=0.707`);
   if (vol !== 1) f.push(`volume=${vol}`);
   // soft limiter so boosting never causes harsh clipping (level=disabled keeps the volume you chose)
   if (vol > 1 || bass > 0 || treble > 0) f.push('alimiter=limit=0.97:level=disabled');

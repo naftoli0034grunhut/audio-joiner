@@ -66,6 +66,13 @@ ipcMain.handle('save-recording', async (_e, data) => {
   }
 });
 
+// Read an audio file so the app can play it (and apply live volume/bass/treble) from memory.
+const AUDIO_OK = /\.(wav|mp3|m4a|aac|flac|ogg|wma|opus|aiff?)$/i;
+ipcMain.handle('read-file', async (_e, p) => {
+  if (typeof p !== 'string' || !AUDIO_OK.test(p)) throw new Error('Not an audio file');
+  return fs.promises.readFile(p);
+});
+
 ipcMain.handle('delete-temp', (_e, p) => {
   if (recTemps.has(p)) { try { fs.unlinkSync(p); } catch (_) {} recTemps.delete(p); }
 });
