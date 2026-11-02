@@ -9,5 +9,10 @@ contextBridge.exposeInMainWorld('api', {
   process: (kind, inputs, format, quality) => ipcRenderer.invoke('process', { kind, inputs, format, quality }),
   save: kind => ipcRenderer.invoke('save', kind),
   reveal: p => ipcRenderer.invoke('reveal', p),
+  pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  getDefaultDir: () => ipcRenderer.invoke('get-default-dir'),
+  openFolder: p => ipcRenderer.invoke('open-folder', p),
+  convertBatch: opts => ipcRenderer.invoke('convert-batch', opts),
+  onBatchProgress: cb => ipcRenderer.on('batch-progress', (_e, d) => cb(d)),
   onProgress: cb => ipcRenderer.on('progress', (_e, t) => cb(t)),
 });

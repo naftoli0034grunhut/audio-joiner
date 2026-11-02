@@ -108,9 +108,57 @@ ipcMain.handle('save', async (_e, kind) => {
   if (r.canceled) return { canceled: true };
   try {
     fs.copyFileSync(tmp, r.filePath);
-    writeState({ n: next, dir: path.dirname(r.filePath) });
+    writeState({ ...readState(), n: next, dir: path.dirname(r.filePath) });
     return { ok: true, path: r.filePath };
   } catch (e) { return { ok: false, error: e.message }; }
+});
+
+
+// ---------- batch convert: many files -> one destination ----------
+const sanitizeName = s => String(s || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim();
+function uniquePath(dir, base, ext) {
+  let out = path.join(dir, `${base}.${ext}`), i = 2;
+  while (fs.existsSync(out)) { out = path.join(dir, `${base} (${i}).${ext}`); i++; }   // never overwrite anything
+  return out;
+}
+
+ipcMain.handle('pick-folder', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Choose where to save the files', properties: ['openDirectory', 'createDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('get-default-dir', () => {
+  const s = readState();
+  return s.convertDir && fs.existsSync(s.convertDir) ? s.convertDir : app.getPath('documents');
+});
+ipcMain.handle('open-folder', (_e, p) => shell.openPath(p));
+
+ipcMain.handle('convert-batch', async (_e, { items, format, quality, destDir, newFolder, newNames }) => {
+  const ext = String(format).replace(/[^a-z0-9]/gi, '');
+  let dir = destDir;
+  try {
+    if (!dir || !fs.existsSync(dir)) throw new Error('The destination folder does not exist.');
+    const folder = newFolder ? sanitizeName(newFolder) : '';
+    if (folder) { dir = path.join(dir, folder); fs.mkdirSync(dir, { recursive: true }); }
+  } catch (e) { return { ok: false, error: e.message }; }
+
+  const results = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    win.webContents.send('batch-progress', { index: i + 1, total: items.length, name: it.name });
+    // keep the old name by default; recordings have no real name, so they always get number + date
+    const numbered = !!newNames || !!it.recorded;
+    let n = readState().n || 0, base;
+    if (numbered) { n += 1; base = `${n}_${today()}`; }
+    else base = sanitizeName(path.basename(it.name, path.extname(it.name))) || `file_${i + 1}`;
+    const out = uniquePath(dir, base, ext);
+    try {
+      await convertFile(it, out, null, { quality });
+      if (numbered) writeState({ ...readState(), n });
+      results.push({ ok: true, name: path.basename(out), size: fs.statSync(out).size });
+    } catch (e) { results.push({ ok: false, name: it.name, error: e.message }); }
+  }
+  writeState({ ...readState(), convertDir: destDir });
+  return { ok: true, dir, results };
 });
 
 ipcMain.handle('reveal', (_e, p) => shell.showItemInFolder(p));

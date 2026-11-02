@@ -70,6 +70,15 @@
   .result h3 { margin:0 0 8px; font-size:12.5px; font-weight:600; }
   .result .row { margin-top:10px; }
 
+  .opts { margin-top:14px; display:flex; flex-direction:column; gap:9px; }
+  .check { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .check label { display:flex; align-items:center; gap:7px; }
+  .dest { display:flex; align-items:center; gap:8px; }
+  .dest label { color:var(--muted); }
+  input[type=text] { font:inherit; font-size:12.5px; padding:5px 8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); min-width:0; }
+  input[type=text]:disabled { opacity:.5; }
+  .dest input[type=text] { flex:1; }
+  .item { padding:3px 0; }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.4); display:grid; place-items:center; z-index:10; }
   .box { background:var(--card); border-radius:10px; padding:16px 18px; width:380px; max-width:90vw; box-shadow:0 10px 30px rgba(0,0,0,.3); }
   .box p { margin:0; line-height:1.5; }
@@ -99,8 +108,9 @@
 
     <section id="view-convert" hidden>
       <h2>Convert files</h2>
-      <div class="sub">Drag one audio file onto the window, choose it, or record it. Then pick the format you want (for example MP3 to WAV).</div>
-      <div id="convert-slot"></div>
+      <div class="sub">Drag one or more audio files onto the window, choose them, or record. Pick the format (for example MP3 to WAV) and where to save them.</div>
+      <div id="convert-slots"></div>
+      <button id="convert-add">+ Add another file</button>
       <div id="convert-actions"></div>
     </section>
   </main>
@@ -119,7 +129,7 @@ let recCount = 0, recId = 0;
 // a slot = one audio source (uploaded file or recording) + its sound adjustments
 const mkSlot = () => ({ file: null, vol: 100, bass: 0, treble: 0, adjustOpen: false, rec: null, fx: null });
 let slots = [mkSlot(), mkSlot()];
-let convSlot = mkSlot();
+let convSlots = [mkSlot()];
 
 const isEmpty = s => !s.file && !s.rec;
 const mmss = ms => { const t = Math.floor(ms / 1000); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
@@ -386,20 +396,21 @@ function filesFromDrop(ev) {
 }
 
 // ---------- JOIN view ----------
-function place(files, start) {
+function placeInto(list, files, start, render) {
   files.forEach((f, k) => {
     let target = null;
-    if (k === 0 && start != null) target = slots[start];
+    if (k === 0 && start != null) target = list[start];
     else {
       const from = start != null ? start + 1 : 0;
-      target = slots.find((s, i) => i >= from && isEmpty(s));
-      if (!target) { target = mkSlot(); slots.push(target); }
+      target = list.find((s, i) => i >= from && isEmpty(s));
+      if (!target) { target = mkSlot(); list.push(target); }
     }
     if (target.rec) return;
     adopt(target, f, false);
   });
-  renderJoin();
+  render();
 }
+const place = (files, start) => placeInto(slots, files, start, renderJoin);
 function renderJoin() {
   const el = document.getElementById('slots');
   el.innerHTML = '';
@@ -416,15 +427,80 @@ document.getElementById('add').onclick = () => { slots.push(mkSlot()); renderJoi
 
 // ---------- CONVERT view ----------
 function renderConvert() {
-  const el = document.getElementById('convert-slot');
+  const el = document.getElementById('convert-slots');
   el.innerHTML = '';
-  el.appendChild(createSlot(convSlot, {
-    index: null, multi: false, rerender: renderConvert, canRemoveSlot: false,
-    onFiles: files => { if (!convSlot.rec) { adopt(convSlot, files[0], false); renderConvert(); } },
-  }));
+  convSlots.forEach((s, i) => el.appendChild(createSlot(s, {
+    index: i, total: convSlots.length, movable: false, multi: true, rerender: renderConvert,
+    canRemoveSlot: convSlots.length > 1,
+    emptyText: 'File ' + (i + 1) + ': drop a file here, choose one, or record',
+    onFiles: files => placeInto(convSlots, files, i, renderConvert),
+    remove: () => { convSlots.splice(i, 1); renderConvert(); },
+  })));
+}
+document.getElementById('convert-add').onclick = () => { convSlots.push(mkSlot()); renderConvert(); };
+
+let convDest = '';
+function buildConvertActions() {
+  const t = new Date(), p2 = n => String(n).padStart(2, '0');
+  const ds = t.getFullYear() + '-' + p2(t.getMonth() + 1) + '-' + p2(t.getDate());
+  document.getElementById('convert-actions').innerHTML = `
+    <div class="row">
+      <label>Format</label>
+      <select id="convert-format">${FORMATS.map(([v, x]) => `<option value="${v}">${x}</option>`).join('')}</select>
+      <label>Size</label>
+      <select id="convert-quality">${QUALITIES.map(([v, x]) => `<option value="${v}">${x}</option>`).join('')}</select>
+    </div>
+    <div class="opts">
+      <div class="check"><label><input type="checkbox" id="convert-newname"> Create a new name for each file (number + date) instead of keeping the old name</label></div>
+      <div class="dest"><label>Save to</label><input type="text" id="convert-dest" readonly placeholder="Choose a folder…"><button id="convert-browse">Browse…</button></div>
+      <div class="check"><label><input type="checkbox" id="convert-newfolder"> Put the files in a new folder named</label><input type="text" id="convert-foldername" value="Converted ${ds}" disabled></div>
+    </div>
+    <div class="hint">Recordings have no file name, so they always get a number + date name. Nothing is ever overwritten: if a name already exists, “(2)” is added.</div>
+    <div class="row"><button class="primary" id="convert-go">Convert &amp; save</button></div>
+    <div class="status" id="convert-status"></div>
+    <div id="convert-results"></div>`;
+  const $ = id => document.getElementById('convert-' + id);
+
+  window.api.getDefaultDir().then(d => { if (!convDest) { convDest = d; $('dest').value = d; } });
+  $('newfolder').onchange = () => { $('foldername').disabled = !$('newfolder').checked; };
+  $('browse').onclick = async () => { const d = await window.api.pickFolder(); if (d) { convDest = d; $('dest').value = d; } };
+
+  window.api.onBatchProgress(pr => {
+    const st = $('status'); st.className = 'status';
+    st.textContent = 'Converting ' + pr.index + ' of ' + pr.total + ': ' + pr.name + ' …';
+  });
+
+  $('go').onclick = async () => {
+    const st = $('status'), res = $('results');
+    const fail = m => { st.className = 'status err'; st.textContent = m; };
+    res.innerHTML = '';
+    if (convSlots.some(s => s.rec)) return fail('Please finish or cancel the recording first.');
+    if (convSlots.some(s => s.file && s.file.loading)) return fail('Please wait, a file is still loading.');
+    const list = convSlots.filter(s => s.file && !s.file.error);
+    if (!list.length) return fail('Please add at least one file first.');
+    if (!convDest) return fail('Please choose where to save the files.');
+    const items = list.map(s => ({ path: s.file.path, name: s.file.name, recorded: !!s.file.recorded, vol: s.vol, bass: s.bass, treble: s.treble }));
+    $('go').disabled = true; st.className = 'status'; st.textContent = 'Working…';
+    const r = await window.api.convertBatch({
+      items, format: $('format').value, quality: $('quality').value, destDir: convDest,
+      newFolder: $('newfolder').checked ? $('foldername').value : '', newNames: $('newname').checked,
+    });
+    $('go').disabled = false;
+    if (!r.ok) return fail('Something went wrong: ' + r.error);
+    const okCount = r.results.filter(x => x.ok).length;
+    st.className = okCount === r.results.length ? 'status ok' : 'status err';
+    st.textContent = '✔ ' + okCount + ' of ' + r.results.length + ' files saved to ' + r.dir;
+    r.results.forEach(x => {
+      const d = document.createElement('div'); d.className = 'item ' + (x.ok ? 'ok' : 'err');
+      d.textContent = x.ok ? '✔ ' + x.name + '  (' + fmtSize(x.size) + ')' : '✖ ' + x.name + ': ' + x.error;
+      res.appendChild(d);
+    });
+    const b = document.createElement('button'); b.textContent = 'Open folder';
+    b.onclick = () => window.api.openFolder(r.dir); res.appendChild(b);
+  };
 }
 
-// ---------- shared: format + size + status + preview + save ----------
+// ---------- JOIN: format + size + status + preview + save ----------
 function buildActions(k, goLabel) {
   document.getElementById(k + '-actions').innerHTML = `
     <div class="row">
@@ -444,14 +520,12 @@ function buildActions(k, goLabel) {
   const $ = id => document.getElementById(k + '-' + id);
 
   $('go').onclick = async () => {
-    const list = k === 'join' ? slots : [convSlot];
     const st = $('status');
     const fail = m => { st.className = 'status err'; st.textContent = m; };
-    if (list.some(s => s.rec)) return fail('Please finish or cancel the recording first.');
-    if (list.some(s => s.file && s.file.loading)) return fail('Please wait, a file is still loading.');
-    const inputs = list.filter(s => s.file && !s.file.error).map(s => ({ path: s.file.path, vol: s.vol, bass: s.bass, treble: s.treble }));
-    if (k === 'join' && inputs.length < 2) return fail('Please add at least two files.');
-    if (k === 'convert' && !inputs.length) return fail('Please add a file first.');
+    if (slots.some(s => s.rec)) return fail('Please finish or cancel the recording first.');
+    if (slots.some(s => s.file && s.file.loading)) return fail('Please wait, a file is still loading.');
+    const inputs = slots.filter(s => s.file && !s.file.error).map(s => ({ path: s.file.path, vol: s.vol, bass: s.bass, treble: s.treble }));
+    if (inputs.length < 2) return fail('Please add at least two files.');
     $('go').disabled = true; $('result').style.display = 'none'; $('player').pause();
     st.className = 'status'; st.textContent = 'Working…'; busyKind = k;
     const r = await window.api.process(k, inputs, $('format').value, $('quality').value);
@@ -475,7 +549,7 @@ function buildActions(k, goLabel) {
   };
 }
 buildActions('join', 'Join &amp; create');
-buildActions('convert', 'Convert &amp; create');
+buildConvertActions();
 
 window.api.onProgress(t => {
   if (!busyKind) return;
@@ -502,7 +576,7 @@ window.addEventListener('drop', e => {
   e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
   const files = filesFromDrop(e); if (!files.length) return;
   if (view === 'join') place(files, null);
-  else if (!convSlot.rec) { adopt(convSlot, files[0], false); renderConvert(); }
+  else placeInto(convSlots, files, null, renderConvert);
 });
 
 renderJoin(); renderConvert();
